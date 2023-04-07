@@ -20,31 +20,33 @@ from peft import (
     prepare_model_for_int8_training,
     set_peft_model_state_dict,
 )
-from transformers import LlamaForCausalLM, LlamaTokenizer
+# from transformers import LlamaForCausalLM, LlamaTokenizer
+from transformers import AutoTokenizer, BloomForCausalLM
 
 from utils.prompter import Prompter
 
 
 def train(
     # model/data params
-    base_model: str = "",  # the only required argument
-    data_path: str = "yahma/alpaca-cleaned",
-    output_dir: str = "./lora-alpaca",
+    base_model: str = "/data/models/bloomz-3b",  # the only required argument
+    data_path: str = "/data/Chinese-Tiger-LoRA/data",
+    output_dir: str = "./bloom-alpaca",
     # training hyperparams
     batch_size: int = 128,
-    micro_batch_size: int = 4,
+    micro_batch_size: int = 64,
     num_epochs: int = 3,
     learning_rate: float = 3e-4,
-    cutoff_len: int = 256,
+    cutoff_len: int = 1024,
     val_set_size: int = 2000,
     # lora hyperparams
     lora_r: int = 8,
     lora_alpha: int = 16,
     lora_dropout: float = 0.05,
-    lora_target_modules: List[str] = [
-        "q_proj",
-        "v_proj",
-    ],
+    # lora_target_modules: List[str] = [
+    #     "q_proj",
+    #     "v_proj",
+    # ],
+    lora_target_modules: List[str] = ["query_key_value"],
     # llm hyperparams
     train_on_inputs: bool = True,  # if False, masks out inputs in loss
     group_by_length: bool = False,  # faster, but produces an odd training loss curve
@@ -107,14 +109,15 @@ def train(
     if len(wandb_log_model) > 0:
         os.environ["WANDB_LOG_MODEL"] = wandb_log_model
 
-    model = LlamaForCausalLM.from_pretrained(
+    # model = LlamaForCausalLM.from_pretrained(
+    model = BloomForCausalLM.from_pretrained(
         base_model,
         load_in_8bit=True,
         torch_dtype=torch.float16,
         device_map=device_map,
     )
 
-    tokenizer = LlamaTokenizer.from_pretrained(base_model)
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
 
     tokenizer.pad_token_id = (
         0  # unk. we want this to be different from the eos token
@@ -238,7 +241,7 @@ def train(
             evaluation_strategy="steps" if val_set_size > 0 else "no",
             save_strategy="steps",
             eval_steps=200 if val_set_size > 0 else None,
-            save_steps=200,
+            save_steps=4000,
             output_dir=output_dir,
             save_total_limit=3,
             load_best_model_at_end=True if val_set_size > 0 else False,
